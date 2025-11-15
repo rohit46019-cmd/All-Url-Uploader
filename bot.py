@@ -4,6 +4,8 @@ from pyrogram.raw.all import layer
 from pyrogram import Client, idle, __version__
 
 from config import Config
+from keep_alive import keep_alive
+keep_alive()
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
