@@ -29,6 +29,37 @@ async def queue_cmd(bot, message: Message):
         "`https://a.com/1.mp4 https://b.com/2.mkv https://c.com/file.zip`"
     )
 
+# ---------------------------------------------------------
+# /queue_status — Show how many tasks are pending
+# ---------------------------------------------------------
+@Client.on_message(filters.command("queue_status") & filters.private)
+async def queue_status_cmd(bot, message: Message):
+    total = len(QUEUE)
+    status = "🟢 Running" if IS_DOWNLOADING else "🔴 Idle"
+
+    await message.reply_text(
+        f"📊 **Queue Status**\n"
+        f"• Status: **{status}**\n"
+        f"• Pending Tasks: **{total}**",
+        quote=True
+    )
+
+
+# ---------------------------------------------------------
+# /clear — Clear the queue & stop downloads
+# ---------------------------------------------------------
+@Client.on_message(filters.command("clear") & filters.private)
+async def clear_cmd(bot, message: Message):
+    global IS_DOWNLOADING
+
+    QUEUE.clear()
+    IS_DOWNLOADING = False
+
+    await message.reply_text(
+        "🧹 **Queue cleared successfully!**\n"
+        "All pending tasks removed.",
+        quote=True
+    )
 
 # ---------------------------------------------------------
 # Detect & Add Links
