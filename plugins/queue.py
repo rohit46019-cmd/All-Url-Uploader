@@ -6,112 +6,105 @@ from pyrogram.types import Message
 import aiohttp
 from config import Config
 
-# Global flags
+# --------------------------
+# Global Variables
+# --------------------------
 CANCEL_FLAG = False
-
-# Global shared queue
 QUEUE = deque()
 IS_DOWNLOADING = False
-
-# Track users waiting to send links
 WAITING_FOR_LINKS = set()
 
-# ---------------------------------------------------------
-# /cancel — Cancel all tasks + stop download
-# ---------------------------------------------------------
-@Client.on_message(filters.command(["cancel"]) & filters.private)
-async def cancel_all_tasks(client, message):
+DOWNLOAD_FOLDER = "downloads"
+os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+
+
+# --------------------------
+# /cancel — Cancel all tasks
+# --------------------------
+@Client.on_message(filters.command("cancel") & filters.private)
+async def cancel_all_tasks(client, message: Message):
     global CANCEL_FLAG, IS_DOWNLOADING
     CANCEL_FLAG = True
     QUEUE.clear()
     IS_DOWNLOADING = False
+    await message.reply(
+        "🚫 All tasks cancelled!\nQueue cleared & current download stopped."
+    )
 
-    await message.reply("🚫 All tasks cancelled!\nQueue cleared & current download stopped.")
 
-
-# ---------------------------------------------------------
+# --------------------------
 # /queue — Ask user to send links
-# ---------------------------------------------------------
+# --------------------------
 @Client.on_message(filters.command("queue") & filters.private)
-async def queue_cmd(bot, message: Message):
-
+async def queue_cmd(client, message: Message):
     WAITING_FOR_LINKS.add(message.from_user.id)
-
-    await message.reply_text(
+    await message.reply(
         "**Send all your links in ONE MESSAGE, separated by spaces.**\n\n"
         "Example:\n"
         "`https://a.com/1.mp4 https://b.com/2.mkv https://c.com/file.zip`"
     )
 
 
-# ---------------------------------------------------------
+# --------------------------
 # /queue_status — Show queue condition
-# ---------------------------------------------------------
+# --------------------------
 @Client.on_message(filters.command("queue_status") & filters.private)
-async def queue_status_cmd(bot, message: Message):
+async def queue_status_cmd(client, message: Message):
     total = len(QUEUE)
     status = "🟢 Running" if IS_DOWNLOADING else "🔴 Idle"
-
-    await message.reply_text(
+    await message.reply(
         f"📊 **Queue Status**\n"
         f"• Status: **{status}**\n"
-        f"• Pending Tasks: **{total}**",
+        f"• Pending Tasks: **{total}**"
     )
 
 
-# ---------------------------------------------------------
-# /clear – Clear queue
-# ---------------------------------------------------------
+# --------------------------
+# /clear — Clear queue only
+# --------------------------
 @Client.on_message(filters.command("clear") & filters.private)
-async def clear_cmd(bot, message: Message):
+async def clear_cmd(client, message: Message):
     global IS_DOWNLOADING
     QUEUE.clear()
     IS_DOWNLOADING = False
-
-    await message.reply_text(
-        "🧹 Queue cleared!\nAll tasks removed."
-    )
+    await message.reply("🧹 Queue cleared!\nAll pending tasks removed.")
 
 
-# ---------------------------------------------------------
-# Detect link message after /queue
-# ---------------------------------------------------------
-@Client.on_message(filters.private & ~filters.command(["queue", "cancel", "clear", "queue_status"]))
-async def queue_add_links(bot, message: Message):
-
+# --------------------------
+# Detect message with links
+# --------------------------
+@Client.on_message(
+    filters.private & ~filters.command(["queue", "cancel", "clear", "queue_status"])
+)
+async def queue_add_links(client, message: Message):
     user_id = message.from_user.id
 
-    # Only accept links if user has triggered /queue
     if user_id not in WAITING_FOR_LINKS:
         return
 
     text = message.text.strip()
     links = text.split()
+    valid_links = [link for link in links if link.startswith("http")]
 
-    valid = [i for i in links if i.startswith("http")]
-
-    if not valid:
-        await message.reply_text("❌ No valid links found. Try again.")
+    if not valid_links:
+        await message.reply("❌ No valid URLs found. Send again.")
         return
 
-    # Add each link to queue
-    for url in valid:
+    for url in valid_links:
         QUEUE.append({"user_id": user_id, "url": url})
 
     WAITING_FOR_LINKS.remove(user_id)
+    await message.reply(f"✅ Added **{len(valid_links)}** links. Starting process...")
 
-    await message.reply_text(f"✅ Added **{len(valid)}** links. Starting process...")
-
-    # Start queue worker
     global IS_DOWNLOADING
     if not IS_DOWNLOADING:
-        asyncio.create_task(queue_worker(bot))
+        asyncio.create_task(queue_worker(client))
 
 
-# ---------------------------------------------------------
-# Queue Worker — Processes links one-by-one
-# ---------------------------------------------------------
-async def queue_worker(bot):
+# --------------------------
+# Queue Worker — downloads & uploads files
+# --------------------------
+async def queue_worker(client: Client):
     global IS_DOWNLOADING, CANCEL_FLAG
     IS_DOWNLOADING = True
 
@@ -126,45 +119,50 @@ async def queue_worker(bot):
         url = task["url"]
 
         try:
-            await bot.send_message(user_id, f"⬇️ **Downloading:**\n{url}")
-
+            await client.send_message(user_id, f"⬇️ **Downloading:**\n{url}")
             file_path = await download_url(url)
 
             if not file_path:
-                await bot.send_message(user_id, "❌ Download failed!")
+                await client.send_message(user_id, "❌ Download failed!")
                 continue
 
-            await bot.send_document(
-                chat_id=user_id,
-                document=file_path,
-                caption=f"Uploaded:\n`{url}`"
-            )
+            # Streamable video if MP4/MKV/MOV/WEBM
+            video_exts = (".mp4", ".mkv", ".mov", ".webm")
+            if file_path.lower().endswith(video_exts):
+                await client.send_video(
+                    chat_id=user_id,
+                    video=file_path,
+                    supports_streaming=True,
+                    caption=f"Uploaded:\n`{url}`"
+                )
+            else:
+                await client.send_document(
+                    chat_id=user_id,
+                    document=file_path,
+                    caption=f"Uploaded:\n`{url}`"
+                )
 
             os.remove(file_path)
-
-            await bot.send_message(user_id, "✅ Done. Moving to next...")
+            await client.send_message(user_id, "✅ Done. Moving to next...")
 
         except Exception as e:
-            await bot.send_message(user_id, f"⚠️ Error: `{e}`")
+            await client.send_message(user_id, f"⚠️ Error: `{e}`")
 
     IS_DOWNLOADING = False
 
 
-# ---------------------------------------------------------
-# Simple Downloader
-# ---------------------------------------------------------
-async def download_url(url):
+# --------------------------
+# Download function using aiohttp
+# --------------------------
+async def download_url(url: str) -> str | None:
     try:
-        fname = url.split("/")[-1] or "file.bin"
-        path = f"downloads/{fname}"
-
-        os.makedirs("downloads", exist_ok=True)
+        filename = url.split("/")[-1] or "file.bin"
+        path = os.path.join(DOWNLOAD_FOLDER, filename)
 
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 if resp.status != 200:
                     return None
-
                 with open(path, "wb") as f:
                     while True:
                         chunk = await resp.content.read(1024 * 64)
@@ -174,5 +172,6 @@ async def download_url(url):
 
         return path
 
-    except:
+    except Exception as e:
+        print(f"Download failed: {e}")
         return None
