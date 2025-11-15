@@ -5,6 +5,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 import aiohttp
 from config import Config
+from typing import Optional
 
 # --------------------------
 # Global Variables
@@ -16,7 +17,6 @@ WAITING_FOR_LINKS = set()
 
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
-
 
 # --------------------------
 # /cancel — Cancel all tasks
@@ -31,7 +31,6 @@ async def cancel_all_tasks(client, message: Message):
         "🚫 All tasks cancelled!\nQueue cleared & current download stopped."
     )
 
-
 # --------------------------
 # /queue — Ask user to send links
 # --------------------------
@@ -43,7 +42,6 @@ async def queue_cmd(client, message: Message):
         "Example:\n"
         "`https://a.com/1.mp4 https://b.com/2.mkv https://c.com/file.zip`"
     )
-
 
 # --------------------------
 # /queue_status — Show queue condition
@@ -58,7 +56,6 @@ async def queue_status_cmd(client, message: Message):
         f"• Pending Tasks: **{total}**"
     )
 
-
 # --------------------------
 # /clear — Clear queue only
 # --------------------------
@@ -68,7 +65,6 @@ async def clear_cmd(client, message: Message):
     QUEUE.clear()
     IS_DOWNLOADING = False
     await message.reply("🧹 Queue cleared!\nAll pending tasks removed.")
-
 
 # --------------------------
 # Detect message with links
@@ -99,7 +95,6 @@ async def queue_add_links(client, message: Message):
     global IS_DOWNLOADING
     if not IS_DOWNLOADING:
         asyncio.create_task(queue_worker(client))
-
 
 # --------------------------
 # Queue Worker — downloads & uploads files
@@ -150,11 +145,10 @@ async def queue_worker(client: Client):
 
     IS_DOWNLOADING = False
 
-
 # --------------------------
 # Download function using aiohttp
 # --------------------------
-async def download_url(url: str) -> str | None:
+async def download_url(url: str) -> Optional[str]:
     try:
         filename = url.split("/")[-1] or "file.bin"
         path = os.path.join(DOWNLOAD_FOLDER, filename)
