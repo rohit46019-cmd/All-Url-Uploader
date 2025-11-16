@@ -1,8 +1,8 @@
 aiohttp
 hachoir
 Pillow
-pyrogram
-requests
+pyrogram>=2.0
+requests>=2.31.0,<3.0
 tgcrypto>=1.4.4
 python-dotenv
 loggers
