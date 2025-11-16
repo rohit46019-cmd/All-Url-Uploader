@@ -6,14 +6,16 @@ from pyrogram import Client
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# Cancel flag, must be controlled from queue.py
+# Cancel flag, controlled from queue.py
 CANCEL_FLAG = False
 
-
-async def download_file(url: str) -> str | None:
+# ----------------------------
+# Download a file from URL
+# ----------------------------
+async def download_file(url: str) -> str | None:  # <- Place here
     """
     Download a file from a URL using aiohttp.
-    Returns the local file path or None on failure.
+    Returns local file path or None on failure.
     """
     try:
         filename = url.split("/")[-1] or "file.bin"
@@ -37,20 +39,16 @@ async def download_file(url: str) -> str | None:
         return None
 
 
+# ----------------------------
+# Upload file to Telegram
+# ----------------------------
 async def upload_file(client: Client, chat_id: int, file_path: str, caption: str = ""):
-    """
-    Upload a file to Telegram.
-    - Videos are sent as streamable if possible
-    - Other files as documents
-    """
-
     if not os.path.exists(file_path):
         await client.send_message(chat_id, "❌ File not found after download.")
         return
 
+    video_exts = (".mp4", ".mkv", ".mov", ".webm")
     try:
-        # Detect video extensions for streaming
-        video_exts = (".mp4", ".mkv", ".mov", ".webm")
         if file_path.lower().endswith(video_exts):
             await client.send_video(
                 chat_id=chat_id,
@@ -64,23 +62,19 @@ async def upload_file(client: Client, chat_id: int, file_path: str, caption: str
                 document=file_path,
                 caption=caption
             )
-
     except Exception as e:
         await client.send_message(chat_id, f"⚠️ Upload failed: {e}")
-
     finally:
-        # Cleanup local file
         try:
             os.remove(file_path)
         except:
             pass
 
 
+# ----------------------------
+# Full download -> upload process
+# ----------------------------
 async def process_url(client: Client, chat_id: int, url: str, cancel_flag_ref: dict):
-    """
-    Full process: Download -> Upload -> Cleanup
-    cancel_flag_ref: a dict with key "cancel" from queue.py
-    """
     if cancel_flag_ref.get("cancel", False):
         cancel_flag_ref["cancel"] = False
         await client.send_message(chat_id, "❌ Download cancelled.")
