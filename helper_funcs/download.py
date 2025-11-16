@@ -1,6 +1,7 @@
 import os
 import aiohttp
 from pyrogram import Client
+from plugins.upload import upload_file
 
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
