@@ -1,0 +1,31 @@
+import os
+from pyrogram import Client
+
+async def upload_file(client: Client, chat_id: int, file_path: str, caption: str = ""):
+    """Upload file to Telegram (sends video with inline play if supported)."""
+    if not os.path.exists(file_path):
+        await client.send_message(chat_id, "❌ File not found after download.")
+        return
+
+    try:
+        video_exts = (".mp4", ".mkv", ".mov", ".webm")
+        if file_path.lower().endswith(video_exts):
+            await client.send_video(
+                chat_id=chat_id,
+                video=file_path,
+                supports_streaming=True,
+                caption=caption
+            )
+        else:
+            await client.send_document(
+                chat_id=chat_id,
+                document=file_path,
+                caption=caption
+            )
+    except Exception as e:
+        await client.send_message(chat_id, f"⚠️ Upload failed: {e}")
+    finally:
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
