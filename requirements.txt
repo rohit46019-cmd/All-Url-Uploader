@@ -3,7 +3,7 @@ hachoir
 Pillow
 pyrogram>=2.0
 requests>=2.31.0,<3.0
-tgcrypto>=1.4.4
+tgcrypto>=1.2.5
 python-dotenv
 loggers
 yt-dlp
