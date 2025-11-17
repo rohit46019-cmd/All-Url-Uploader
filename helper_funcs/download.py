@@ -3,6 +3,7 @@ import aiohttp
 import asyncio
 import mimetypes
 import subprocess
+import json
 from pyrogram import Client
 from pyrogram.errors import RPCError
 
@@ -11,13 +12,14 @@ from pyrogram.errors import RPCError
 # FAST ASYNC DOWNLOADER
 # -----------------------------------------------------
 async def download_file(url: str, output_folder: str = "downloads") -> str | None:
-    """Downloads a file from URL and returns saved file path."""
+    """Downloads a file from URL and saves it with correct extension."""
+
     os.makedirs(output_folder, exist_ok=True)
 
-    # Try to extract filename
+    # Extract name
     filename = url.split("/")[-1].split("?")[0]
 
-    # If no filename present → generate one
+    # If no filename → assign default mp4
     if "." not in filename:
         filename = "video.mp4"
 
@@ -30,10 +32,9 @@ async def download_file(url: str, output_folder: str = "downloads") -> str | Non
                 if response.status != 200:
                     return None
 
-                # fast chunk download
                 with open(file_path, "wb") as f:
                     while True:
-                        chunk = await response.content.read(1024 * 64)
+                        chunk = await response.content.read(1024 * 128)
                         if not chunk:
                             break
                         f.write(chunk)
@@ -46,18 +47,50 @@ async def download_file(url: str, output_folder: str = "downloads") -> str | Non
 
 
 # -----------------------------------------------------
-# UPLOAD AS TELEGRAM STREAMABLE VIDEO
+# GET VIDEO METADATA (duration, width, height)
+# -----------------------------------------------------
+def get_video_metadata(path: str):
+    try:
+        cmd = [
+            "ffprobe", "-v", "quiet",
+            "-print_format", "json",
+            "-show_format", "-show_streams",
+            path
+        ]
+        output = subprocess.check_output(cmd).decode()
+        info = json.loads(output)
+
+        video_stream = next(
+            (s for s in info["streams"] if s["codec_type"] == "video"),
+            None
+        )
+
+        if video_stream:
+            duration = float(info["format"].get("duration", 0))
+            width = int(video_stream.get("width", 720))
+            height = int(video_stream.get("height", 480))
+            return duration, width, height
+
+    except Exception:
+        pass
+
+    return 0, 720, 480
+
+
+
+# -----------------------------------------------------
+# UPLOAD AS REAL TELEGRAM STREAMABLE VIDEO
 # -----------------------------------------------------
 async def upload_file(client: Client, chat_id: int, file_path: str, caption: str = ""):
-    """Uploads file as real streamable video (NOT document)."""
+    """Uploads a video properly with metadata so Telegram plays it internally."""
 
-    # 1. Force .mp4 extension (Telegram requirement)
+    # FORCE MP4 EXTENSION
     if not file_path.lower().endswith(".mp4"):
         new_path = file_path + ".mp4"
         os.rename(file_path, new_path)
         file_path = new_path
 
-    # 2. Apply FFmpeg faststart – required for Telegram streaming
+    # FIX STREAMING HEADER (FFmpeg FASTSTART)
     fixed_path = file_path.replace(".mp4", "_fixed.mp4")
 
     ffmpeg_cmd = [
@@ -70,26 +103,36 @@ async def upload_file(client: Client, chat_id: int, file_path: str, caption: str
     ]
 
     try:
-        subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        subprocess.run(
+            ffmpeg_cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
         final_path = fixed_path
     except:
-        # ffmpeg failed → send original
-        final_path = file_path
+        final_path = file_path  # fallback
 
-    # 3. Upload using send_video() (NOT send_document)
+    # GET VIDEO METADATA (DURATION + SIZE)
+    duration, width, height = get_video_metadata(final_path)
+
+    # SEND AS VIDEO
     try:
         await client.send_video(
             chat_id,
             video=final_path,
             caption=caption,
-            supports_streaming=True   # ⬅️ Important
+            duration=int(duration),
+            width=width,
+            height=height,
+            supports_streaming=True
         )
 
     except RPCError as e:
         await client.send_message(chat_id, f"⚠️ Upload failed: `{e}`")
 
     finally:
-        # Cleanup temp files
+        # CLEANUP
         try:
             if os.path.exists(file_path):
                 os.remove(file_path)
@@ -108,9 +151,8 @@ async def upload_file(client: Client, chat_id: int, file_path: str, caption: str
 # FULL PROCESS (DOWNLOAD → FIX → UPLOAD)
 # -----------------------------------------------------
 async def process_url(client: Client, chat_id: int, url: str, cancel_flag_ref: dict):
-    """Handles full process: download & upload"""
+    """Handles full process: download → convert → upload"""
 
-    # Cancel check
     if cancel_flag_ref.get("cancel", False):
         cancel_flag_ref["cancel"] = False
         await client.send_message(chat_id, "❌ Download cancelled.")
@@ -118,13 +160,13 @@ async def process_url(client: Client, chat_id: int, url: str, cancel_flag_ref: d
 
     await client.send_message(chat_id, f"⬇️ Downloading:\n{url}")
 
-    # Download
+    # DOWNLOAD
     file_path = await download_file(url)
 
     if not file_path:
         await client.send_message(chat_id, "❌ Download failed!")
         return
 
-    # Upload
+    # UPLOAD
     caption = f"Uploaded:\n`{url}`"
     await upload_file(client, chat_id, file_path, caption=caption)
