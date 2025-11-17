@@ -1,31 +1,67 @@
 import os
 from pyrogram import Client
 
+# You would define or import these helper functions from another file (e.g., utils.py)
+# from .utils import get_video_metadata, create_thumbnail
+
+# --- Placeholder Functions (You must implement these) ---
+def get_video_metadata(file_path):
+    """Placeholder: Should return a dict with duration, width, height."""
+    # Implement logic using ffprobe or similar library here
+    return {"duration": 0, "width": 0, "height": 0} 
+
+def create_thumbnail(file_path):
+    """Placeholder: Should return the path to the created JPEG thumbnail."""
+    # Implement logic using ffmpeg/ffprobe to extract frame and save as JPEG < 200KB
+    return None # Return None if thumbnail creation fails
+# --------------------------------------------------------
+
 async def upload_file(client: Client, chat_id: int, file_path: str, caption: str = ""):
-    """Upload file to Telegram (sends video with inline play if supported)."""
+    """Upload file to Telegram, including video metadata for inline play/thumbnail."""
+    
     if not os.path.exists(file_path):
         await client.send_message(chat_id, "❌ File not found after download.")
         return
 
+    video_exts = (".mp4", ".mkv", ".mov", ".webm")
+    is_video = file_path.lower().endswith(video_exts)
+    
+    thumb_path = None # Initialize thumbnail path
+    
     try:
-        video_exts = (".mp4", ".mkv", ".mov", ".webm")
-        if file_path.lower().endswith(video_exts):
+        if is_video:
+            # 1. Get Metadata
+            metadata = get_video_metadata(file_path)
+            
+            # 2. Create Thumbnail (Crucial for inline play/streaming)
+            thumb_path = create_thumbnail(file_path) 
+            
             await client.send_video(
                 chat_id=chat_id,
                 video=file_path,
+                thumb=thumb_path,            # 🔑 FIX 1: Path to the JPEG thumbnail
+                duration=metadata["duration"], # 🔑 FIX 2: Video duration in seconds
+                width=metadata["width"],       # 🔑 FIX 3: Video width in pixels
+                height=metadata["height"],     # 🔑 FIX 4: Video height in pixels
                 supports_streaming=True,
                 caption=caption
             )
         else:
+            # Sending as a document for non-video files
             await client.send_document(
                 chat_id=chat_id,
                 document=file_path,
                 caption=caption
             )
+            
     except Exception as e:
         await client.send_message(chat_id, f"⚠️ Upload failed: {e}")
+        
     finally:
+        # Clean up both the video and the temporary thumbnail file
         try:
             os.remove(file_path)
+            if thumb_path and os.path.exists(thumb_path):
+                os.remove(thumb_path)
         except Exception:
             pass
